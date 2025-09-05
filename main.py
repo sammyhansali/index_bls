@@ -20,41 +20,32 @@ headers = {
 
 series_ids = {
     "ConsumerPriceApparelData": {
-        "CUUR0000SAA": "Apparel (NSA)",
-        "CUSR0000SAA": "Apparel (SA)",
+        "CUUR0000SAA": "Apparel",
+        "CUSR0000SAA": "Apparel",
     },
     "ConsumerPriceHousingData": {
-        "CUUR0000SAH3": "Household Furnishings and Operations (NSA)",
-        "CUSR0000SAH3": "Household Furnishings and Operations (SA)",
+        "CUUR0000SAH3": "Household Furnishings and Operations",
+        "CUSR0000SAH3": "Household Furnishings and Operations",
     },
     "ConsumerPriceMedicalData": {
-        "CUUR0000SEMC01": "Physicians' Services (NSA)",
-        "CUSR0000SEMC01": "Physicians' Services (SA)",
-        "CUUR0000SEMD01": "Hospital Services (NSA)",
-        "CUSR0000SEMD01": "Hospital Services (SA)",
-        "CUUR0000SAM1": "Medical Care Commodities (NSA)",
-        "CUSR0000SAM1": "Medical Care Commodities (SA)",
+        "CUUR0000SEMC01": "Physicians' Services",
+        "CUSR0000SEMC01": "Physicians' Services",
+        "CUUR0000SEMD01": "Hospital Services",
+        "CUSR0000SEMD01": "Hospital Services",
+        "CUUR0000SAM1": "Medical Care Commodities",
+        "CUSR0000SAM1": "Medical Care Commodities",
     },
     "ConsumerPriceRecreationData": {
-        "CUUR0000SAR": "Recreation (NSA)",
-        "CUSR0000SAR": "Recreation (SA)",
+        "CUUR0000SAR": "Recreation",
+        "CUSR0000SAR": "Recreation",
     },
     "ProducerPriceData": {
-        "WPUFD49208": "Finished Goods Less Energy (NSA)",
-        "WPSFD49208": "Finished Goods Less Energy (SA)",
-        "WPUFD4131": "Finished Goods Less Food and Energy (NSA)",
-        "WPSFD4131": "Finished Goods Less Food and Energy (SA)",
+        "WPUFD49208": "Finished Goods Less Energy",
+        "WPSFD49208": "Finished Goods Less Energy",
+        "WPUFD4131": "Finished Goods Less Food and Energy",
+        "WPSFD4131": "Finished Goods Less Food and Energy",
     },
 }
-
-def try_api(url, headers):
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        return response
-    except:
-        print(response.status_code)
-        return None
 
 def generate_raw(df, cat: str):
     curr_srs = series_ids[cat]
@@ -64,17 +55,20 @@ def generate_raw(df, cat: str):
             (pl.col('period').str.starts_with('S')==False) # [S01, S02, S03]. not sure exactly what these are.
             & (pl.col('period') != 'M13') # Month 13 is the average of that series for that full calendar year.
             & (pl.col('series_id').is_in(list(curr_srs.keys())))
+            & (pl.col('year') >= 1975) # Data is sparse before 1975
         ) \
         .with_columns(
             pl.col('period').str.slice(-2).cast(pl.Int8).alias('month'),
             pl.col('series_id').replace(curr_srs).alias("category"),
+            (pl.col('series_id').str.slice(2, 1)=='S').alias('is_seasonally_adjusted'),
         ) \
         .with_columns(
             pl.date(pl.col('year'), pl.col('month'), 1).alias('date')
         ) \
         .select([
             'category',
-            'series_id', 
+            'series_id',
+            'is_seasonally_adjusted',
             'date', 
             'value',
         ])
@@ -95,7 +89,8 @@ def generate_yr_agg_pivot(pivot_df):
         ) \
         .group_by(pl.col('year')) \
         .agg(pl.all().exclude('year', 'date').mean()) \
-        .sort('year')
+        .sort('year') \
+        .select(pl.all().exclude("^..S.*$")) # remove seasonally adjusted pivot columns)
 
     return yr_agg_pivot_df
 
